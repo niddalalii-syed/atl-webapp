@@ -213,6 +213,7 @@
 //   }
 // }
 
+// ignore_for_file: unnecessary_null_comparison
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:stacked/stacked.dart';
@@ -244,7 +245,8 @@ class ATLWebViewVM extends BaseViewModel {
       _extractUrlParameters(); // Extract parameters first
 
       if (uidParam == null || tournamentNameParam == null) {
-        _errorMessage = 'Missing required URL parameters (uid or tournamentName). '
+        _errorMessage =
+            'Missing required URL parameters (uid or tournamentName). '
             'URL must contain ?uid=YOUR_UID&tournamentName=YOUR_TOURNAMENT_NAME';
         print(_errorMessage);
         setBusy(false); // Stop busy state on error
@@ -273,10 +275,12 @@ class ATLWebViewVM extends BaseViewModel {
       uidParam = queryParams['uid'];
       tournamentNameParam = queryParams['tournamentName'];
 
-      print('URL Parameters Extracted: UID=$uidParam, TournamentName=$tournamentNameParam');
+      print(
+          'URL Parameters Extracted: UID=$uidParam, TournamentName=$tournamentNameParam');
     } else {
       // This ViewModel is designed for web, but handle non-web gracefully if ever run elsewhere
-      _errorMessage = 'URL parameter extraction is only applicable for web builds.';
+      _errorMessage =
+          'URL parameter extraction is only applicable for web builds.';
       print(_errorMessage);
     }
   }
@@ -291,9 +295,9 @@ class ATLWebViewVM extends BaseViewModel {
           .doc('Rules')
           .get();
 
-      final pointsVictory = rulesSnap['pointsVictory'] ?? 3;
-      final pointsTie = rulesSnap['pointsTie'] ?? 1;
-      final pointsLose = rulesSnap['pointsLose'] ?? 0;
+      final pointsVictory = rulesSnap.data()?['pointsVictory'] ?? 3;
+      final pointsTie = rulesSnap.data()?['pointsTie'] ?? 1;
+      final pointsLose = rulesSnap.data()?['pointsLose'] ?? 0;
 
       final matchSnapshot = await FirebaseFirestore.instance
           .collection(uidParam!)
@@ -305,10 +309,21 @@ class ATLWebViewVM extends BaseViewModel {
 
       for (var doc in matchSnapshot.docs) {
         final data = doc.data();
-        // Ensure 'matches' field exists and is a List
+
         final matches = (data['matches'] as List? ?? [])
-            .where((item) => item is Map && item.containsKey('match'))
-            .map((item) => item['match'][0]) // Assuming 'match' is always a list with one item
+            .where((item) => item is Map<String, dynamic>)
+            .map((item) {
+              if (item.containsKey('match') &&
+                  item['match'] is List &&
+                  item['match'].isNotEmpty) {
+                return item['match'][0]; // Old format
+              }
+              return item; // New format
+            })
+            .where((match) =>
+                match.containsKey('player1') &&
+                match.containsKey('player2') &&
+                match.containsKey('scores'))
             .toList();
 
         for (var match in matches) {
@@ -318,55 +333,34 @@ class ATLWebViewVM extends BaseViewModel {
           final score2 = match['scores']?['player2'] ?? 0;
           final isDraw = match['draw'] ?? false;
 
-          // Initialize player data if not present
-          players.putIfAbsent(player1, () => {
-                'name': player1,
-                'played': 0,
-                'win': 0,
-                'draw': 0,
-                'loss': 0,
-                'points': 0,
-                'pf': 0,
-                'pa': 0,
-              });
-          players.putIfAbsent(player2, () => {
-                'name': player2,
-                'played': 0,
-                'win': 0,
-                'draw': 0,
-                'loss': 0,
-                'points': 0,
-                'pf': 0,
-                'pa': 0,
-              });
+          players.putIfAbsent(player1, () => _initPlayer(player1));
+          players.putIfAbsent(player2, () => _initPlayer(player2));
 
-          // Only count matches if scores are present (not both 0, or explicit play)
+          // Only process if at least one player scored
           if (score1 != 0 || score2 != 0) {
-            players[player1]!['played']++;
-            players[player2]!['played']++;
+            players[player1]!['played'] += 1;
+            players[player2]!['played'] += 1;
 
             players[player1]!['pf'] += score1;
             players[player1]!['pa'] += score2;
             players[player2]!['pf'] += score2;
             players[player2]!['pa'] += score1;
 
-            if (isDraw) {
-              players[player1]!['draw']++;
-              players[player2]!['draw']++;
+            if (isDraw || score1 == score2) {
+              players[player1]!['draw'] += 1;
+              players[player2]!['draw'] += 1;
               players[player1]!['points'] += pointsTie;
               players[player2]!['points'] += pointsTie;
+            } else if (score1 > score2) {
+              players[player1]!['win'] += 1;
+              players[player2]!['loss'] += 1;
+              players[player1]!['points'] += pointsVictory;
+              players[player2]!['points'] += pointsLose;
             } else {
-              if (score1 > score2) {
-                players[player1]!['win']++;
-                players[player2]!['loss']++;
-                players[player1]!['points'] += pointsVictory;
-                players[player2]!['points'] += pointsLose;
-              } else {
-                players[player2]!['win']++;
-                players[player1]!['loss']++;
-                players[player2]!['points'] += pointsVictory;
-                players[player1]!['points'] += pointsLose;
-              }
+              players[player2]!['win'] += 1;
+              players[player1]!['loss'] += 1;
+              players[player2]!['points'] += pointsVictory;
+              players[player1]!['points'] += pointsLose;
             }
           }
         }
@@ -374,19 +368,42 @@ class ATLWebViewVM extends BaseViewModel {
 
       standings = players.values.toList();
 
+      // Add PF-PA difference for sorting
+      for (var player in standings) {
+        player['diff'] = player['pf'] - player['pa'];
+      }
+
+      // Sort: Points DESC -> PF-PA Diff DESC -> PF DESC
       standings.sort((a, b) {
         if (b['points'] != a['points']) {
           return b['points'].compareTo(a['points']);
+        } else if (b['diff'] != a['diff']) {
+          return b['diff'].compareTo(a['diff']);
         } else {
-          return b['pf'].compareTo(a['pf']); // Sort by PF if points are tied
+          return b['pf'].compareTo(a['pf']);
         }
       });
+
       print('Standings: \n$standings');
     } catch (e) {
       _errorMessage = 'Failed to fetch standings data: $e';
       print('Error fetching standings: $e');
-      rethrow; // Re-throw to be caught by the outer init try-catch
+      rethrow;
     }
+  }
+
+  Map<String, dynamic> _initPlayer(String name) {
+    return {
+      'name': name,
+      'played': 0,
+      'win': 0,
+      'draw': 0,
+      'loss': 0,
+      'points': 0,
+      'pf': 0,
+      'pa': 0,
+      'diff': 0, // PF-PA difference
+    };
   }
 
   /// Fetches and formats matchdays data from Firestore.
@@ -402,7 +419,7 @@ class ATLWebViewVM extends BaseViewModel {
       matchdays = querySnapshot.docs.map((doc) {
         final data = doc.data();
         final matches = (data['matches'] as List? ?? []).map((e) {
-          final matchData = e['match'][0];
+          final matchData = e;
           return {
             'player1': matchData['player1'],
             'player2': matchData['player2'],
@@ -411,6 +428,8 @@ class ATLWebViewVM extends BaseViewModel {
             'winner': matchData['winner'] ?? '',
             'loser': matchData['loser'] ?? '',
             'draw': matchData['draw'] ?? false,
+            'date': matchData['date'] ?? 'Not Decided',
+            'time': matchData['time'] ?? 'Not Decided',
           };
         }).toList();
 
@@ -426,7 +445,8 @@ class ATLWebViewVM extends BaseViewModel {
         };
       }).toList();
 
-      matchdays.sort((a, b) => (a['matchday'] as String).compareTo(b['matchday'] as String));
+      matchdays.sort((a, b) =>
+          (a['matchday'] as String).compareTo(b['matchday'] as String));
       print('Matchdays: \n$matchdays');
     } catch (e) {
       _errorMessage = 'Failed to fetch matchdays data: $e';

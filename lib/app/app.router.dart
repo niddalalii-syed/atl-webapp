@@ -5,7 +5,7 @@
 // **************************************************************************
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
-import 'package:atl_webview/views/atl_webview.dart' as _i2;
+import 'package:atl_webview/views/ATL_Webview/atl_webview.dart' as _i2;
 import 'package:flutter/material.dart' as _i3;
 import 'package:flutter/material.dart';
 import 'package:stacked/stacked.dart' as _i1;

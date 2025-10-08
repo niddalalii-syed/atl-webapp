@@ -1,6 +1,6 @@
 {
-    "name": "atl_webview",
-    "short_name": "atl_webview",
+    "name": "AKI's Tennis League S1",
+    "short_name": "AKI's Tennis S1",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
