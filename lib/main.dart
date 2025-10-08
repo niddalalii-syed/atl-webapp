@@ -67,7 +67,7 @@ class MyApp extends StatelessWidget {
               ),
             );
           },
-          // navigatorKey: StackedService.navigatorKey, djsbfusbd
+          // navigatorKey: StackedService.navigatorKey, sdvbfgv hef
           // onGenerateRoute: StackedRouter().onGenerateRoute,
         );
       },
