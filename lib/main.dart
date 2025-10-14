@@ -63,7 +63,7 @@ class MyApp extends StatelessWidget {
             // 404 fallback
             return MaterialPageRoute(
               builder: (_) => const Scaffold(
-                body: Center(child: Text('406 Page Not Found')),
+                body: Center(child: Text('407 Page Not Found')),
               ),
             );
           },
